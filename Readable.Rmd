@@ -1,0 +1,594 @@
+---
+title: "**Tabbed Template with Sidebar**"
+author: "by Janie"
+date: "`r Sys.Date()`"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    theme: readable
+---
+
+```{r loadlibs, echo=FALSE}
+
+# This is an R Markdown File that uses knitr and pandoc to create an .html
+# file as a tabbed design dashboard.  This dashboard uses open source
+# data files to create different visualizations of the data.
+
+# A version of this file was presented at the CAT Fest Lightning Talks
+# on February 22, 2017 at the US Census Bureau in Suitland MD.
+
+# This file was built and knit using RStudio Version 1.0.136, but can be run within
+# the R environment using a render command.
+
+# Valid bootstrap themes include "default", "cerulean"(2), "journal"(3), "flatly"(4), 
+# "readable"(1), "spacelab", "united", "cosmo"(5),  "lumen", "paper", 
+# "sandstone", "simplex", and "yeti"
+
+# ######################################################
+# load needed libraries
+# ######################################################
+
+library(knitr)
+library(maps)
+library(ggplot2)
+library(stringr)
+library(mapdata)
+library(maptools)
+library(ggmap)
+library(rgdal)
+library(classInt)
+library(foreign)    # to read .dbf files
+library(plyr)       # needed for join() and %>% 
+library(flexdashboard)
+library(rmarkdown)
+library(leaflet)
+library(devtools)
+library(plotly)
+library(RgoogleMaps)
+library(sp)
+library(data.table)
+
+# ######################################################
+# load and store constants
+# ######################################################
+
+# set file paths
+tele.path <- # set different file paths when working in different environments
+site.path <- # possible file path #2
+cat.path <-  # possible file path #3
+
+# set the desired path to this.path
+this.path <- tele.path
+
+# now, set all paths based on this.path
+shape.path <- gsub(" ","",paste(this.path,"Shapefiles"))
+data.path <- gsub(" ","",paste(this.path,"Data"))
+
+```
+
+Sidebar Title {.sidebar data-width=300}
+-------------------------------------    
+```{r descriptives, echo=FALSE}
+
+# any new R code goes here
+
+```
+### FlexDashboard with HTMLwidgets
+  
+Navigation:
+
+&nbsp;&nbsp;&nbsp;[Cerulean](Cerulean.html)  
+&nbsp;&nbsp;&nbsp;[Cosmo](Cosmo.html)  
+&nbsp;&nbsp;&nbsp;[Flatly](Flatly.html)  
+&nbsp;&nbsp;&nbsp;[Journal](Journal.html)    
+&nbsp;&nbsp;&nbsp;[Readable](Readable.html)  
+
+Column {.tabset}
+-------------------------------------
+### Google Map \n Baltimore 
+
+```{r tab2,echo=FALSE}
+
+# R Code Begins Here
+# Using google, the following will return lat/lon for Baltimore, Maryland
+CenterOfMap <- geocode("Baltimore, MD")
+# pretty cool
+
+# ########################################################################
+# CREATE THE BASE MAP
+# ########################################################################
+
+# get the google map of Baltimore
+Baltimore <- get_map(c(lon=CenterOfMap$lon, lat=CenterOfMap$lat), zoom = 12,
+    maptype = "terrain",
+    source = "google")
+my.base.map <- ggmap(Baltimore)
+
+# ########################################################################
+# CREATE THE VACANT BUILDINGS POINT MAP
+# ########################################################################
+
+# "BaltimoreVacBldgsClean2016-10" is a "cleaned" version of the file
+# downloaded from NEED SITE HERE.  The "clean" version includes individual 
+# lat/lon fields that were separated using an external R file.  Additional
+# cleaning is performed below before maps are output.
+
+# import the VACANT BUILDINGS point shapefiles
+vacant.10 <- readOGR(shape.path,"BaltimoreVacBldgsClean2016-10",
+                     stringsAsFactors=FALSE,verbose = FALSE)
+
+# create a data frame by hand, since fortify doesn't work with points data
+db10 <- data.frame(FID=as.numeric(vacant.10$Field1))
+
+# db10 has mixed case values in the PoliceDist variable, so convert to all uppercase
+vacant.10$PoliceDist <- toupper(vacant.10$PoliceDist)
+
+# db10 has a misspelled police district (nothern instead of northern)
+vacant.10$PoliceDist <- sub('NOTH', 'NORTH', vacant.10$PoliceDist)
+
+# add lat/lon and the Police Districts to the data frame
+db10 <- cbind(db10,vacant.10@coords,vacant.10$PoliceDist)
+
+# reformat the variable names the way I want them
+names(db10) <- c("FID","lon","lat","Police District")
+
+# build the map
+G10 <- my.base.map +
+  geom_jitter(aes(x=lon, y=lat, colour = `Police District`), data=db10, size=0.5) +
+  ggtitle("Baltimore Vacant Buildings\ncirca October 2016") +
+  xlab("Longitude") + ylab("Latitude")
+
+G10 <- G10 + geom_text(x=-76.555, y=39.22, size=2,colour="black",
+    label="Data Source: City of Baltimore, Maryland\nhttps://data.baltimorecity.gov/")
+    
+# and plot it
+plot(G10)
+
+# ########################################################################
+# plot the same data set as hexagonal bins (density)
+# ########################################################################
+
+# advanced version of ggplot with hexbin:
+# ggmap(map, base_layer = ggplot(coords, aes(x=longitude, y=latitude))) +
+#     coord_cartesian() +
+#     stat_binhex()
+
+# base plot version with hexbin:
+# hbin <- hexbin(db08$lon,db08$lat, xbins = 40)
+# plot(hbin, xlab = "Longitude",ylab = "Latitude")
+
+HG10 <- ggmap(Baltimore) +
+  coord_cartesian() +
+  coord_fixed(1.3) +
+  stat_binhex(data=db10,aes(x=lon,y=lat),bins=75,geom="hex",alpha=0.75) +
+  ggtitle("Baltimore Vacant Buildings Hex Binned Density Map\ncirca October 2016") +
+  scale_fill_gradientn(colours=c("lightpink","dark red"),name = "Frequency",na.value=NA) +
+  xlab("Longitude") + ylab("Latitude")
+
+HG10 <- HG10 + geom_text(x=-76.555, y=39.22, size=2,colour="black",
+    label="Data Source: City of Baltimore, Maryland\nhttps://data.baltimorecity.gov/")
+
+HG10
+
+```
+
+### Data Table
+
+<center><h3>Gross State Product Per Capita</h3></center>
+<p>Source: https://en.wikipedia.org/wiki/List_of_U.S._states_by_GDP_per_capita</p>
+```{r tab3,echo=FALSE}
+
+# R Code Begins Here
+
+# set the file name
+myfile <- gsub(" ","",paste(this.path,"Shapefiles","/","stateGSP.dbf"))
+
+# open the file
+mygsp <- read.dbf(myfile, as.is = FALSE)
+
+# remove unwanted columns
+mygsp$STATEFP <- NULL
+mygsp$STATENS <- NULL
+mygsp$AFFGEOID <- NULL
+mygsp$LSAD <- NULL
+mygsp$NAME <- NULL
+mygsp$ALAND <- NULL
+mygsp$AWATER <- NULL
+
+# create the table
+DT::datatable(mygsp, options = list(
+  bPaginate = FALSE,
+  rownames = FALSE,
+  style="bootstrap"
+  )
+)
+```
+
+### Plotly Box Plot
+
+```{r tab4,echo=FALSE}
+
+# R Code Starts Here
+
+# set styles for plot elements
+f <- list(
+  family = "sans serif",
+  size = 18)
+
+x <- list(
+  title = "Year",
+  titlefont = f
+)
+
+y <- list(
+  title = "log(GSP)",
+  titlefont = f
+)
+
+# create vectors for column headings for tidy data
+
+# id's
+my.id.vars <- c("GEOID","STUSPS","State")
+
+# values or measures
+my.gsp.vars <- c("yr2009","yr2010","yr2011","yr2012","yr2015")
+
+# tidy GSP values (using melt, which is deprecated now)
+mytidygsp <- melt(mygsp,id.vars=my.id.vars,measure.vars=my.gsp.vars)
+
+# create mouse hover data
+mytidygsp$my_text = paste(mytidygsp$State,": $"," per capita",sep="")
+mytidygsp$z = mytidygsp$value
+
+# build the plot
+p <- plot_ly(y = log(mytidygsp$value), 
+             x = mytidygsp$variable,
+             color = mytidygsp$variable,
+             boxmean = TRUE,
+             text = ~paste('Species: ', mytidygsp$value),
+             hoverinfo = text,
+             type = "box")  %>%
+    layout(title = 'Gross State Product per Capita - All States',
+           titlefont = list(
+              color = "rgb(0, 0, 0)", 
+              family = "", 
+              size = 0
+           ),
+           xaxis = x, 
+           yaxis = y) 
+
+# plot it
+p
+
+```
+
+### Plotly Bar Chart
+
+```{r tab6,echo=FALSE}
+
+# R Code Starts Here
+
+# re-create mygsp
+myfile <- gsub(" ","",paste(this.path,"Shapefiles","/","stateGSP.dbf"))
+mygsp <- read.dbf(myfile, as.is = FALSE)
+
+# create traces for each year to add to the plot
+trace_0 <- mygsp$yr2015
+trace_1 <- mygsp$yr2012
+trace_2 <- mygsp$yr2011
+trace_3 <- mygsp$yr2010
+trace_4 <- mygsp$yr2009
+
+# set x-axis values (states)
+x <- mygsp$STUSPS
+
+# create the data frame
+my.df <- data.frame(x, trace_0, trace_1, trace_2, trace_3, trace_4)
+
+# build the plot
+p <- plot_ly(my.df, x = ~x, y = ~trace_4, type = 'bar', name = colnames(mygsp[15])) %>%
+  add_trace(y = ~trace_3, name = colnames(mygsp[14])) %>%
+  add_trace(y = ~trace_2, name = colnames(mygsp[13])) %>%
+  add_trace(y = ~trace_1, name = colnames(mygsp[12])) %>%
+  add_trace(y = ~trace_0, name = colnames(mygsp[11])) %>%
+  layout(title = 'Gross State Product, All Years',
+         xaxis = list(title = 'State'),
+         yaxis = list(title = 'GSP ($)'),
+         barmode = 'relative')
+
+# and plot it
+p
+
+
+```
+
+### Leaflet() Example
+<center><h3>Gross State Product Per Capita</h3></center>
+```{r tab1,echo=FALSE,message=FALSE}
+
+# R Code Goes Here
+
+# get the data file
+usgdp <- readOGR(shape.path,layer = "stateGSP",verbose = FALSE)
+
+# create a color palette
+pal <- colorQuantile(c("lightpink","dark red"), NULL, n = 7)
+
+# set the on-mouse-click text
+state_popup <- paste0("<strong>State: </strong>", 
+                      usgdp$NAME, 
+                      "<br><strong>GSP per capita (2015): </strong>", 
+                      paste(' $',prettyNum(usgdp$yr2015,big.mark=",",scientific=FALSE)))
+
+# build the plot
+leaflet(data = usgdp) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  #fitBounds(-124, 24, -66, 50) %>%
+
+  addPolygons(fillColor = ~pal(yr2015), 
+              fillOpacity = 0.8, 
+              color = "#BDBDC3", 
+              weight = 1, 
+              popup = state_popup) %>% 
+  
+  addLegend("bottomright", 
+            pal = pal, 
+            values = ~usgdp$yr2015,
+            title = "By state (2015)",
+            #labFormat = labelFormat(prefix = "$"),
+            opacity = 1
+            )
+
+```
+
+### Plotly.js Example
+    
+```{r tab5,echo=FALSE}
+
+# R Code Starts Here
+
+# build the traces
+trace1 <- list(
+  x = c(0.9, 1.9, 6.8, 3.8, 3.8, 1.9, 4.8, 5, 0, 6.7, 3.9, 1.9, 7.8, 0.8, 8.8, 5.8, 7.8, 3.9, 7.8, 2.9, 1.9, 1.9, 0, 21.7), 
+  y = c("LinkedIn", "Yelp", "Facebook", "Flickr", "Pinterest", "Blogger", "WordPress.com", "Goodreads", "Slashdot", "Last.fm", "StumbleUpon", "Quora", "Twitter", "Stack Overflow", "MySpace", "LiveJournal", "Tagged", "Hi5", "Tumblr", "Reddit", "Github", "Orkut", "Hacker News", "deviantART"), 
+  marker = list(color = "rgb(17, 78, 166)"), 
+  name = "0-17", 
+  orientation = "h", 
+  type = "bar", 
+  uid = "063b98", 
+  xsrc = "Dreamshot:4231:b631ec", 
+  ysrc = "Dreamshot:4231:b4bc0c"
+)
+trace2 <- list(
+  x = c(3.8, 5.8, 8.9, 10, 5.8, 9.8, 9.8, 8.5, 16.5, 13.8, 16.6, 15.8, 13.8, 16.9, 16.9, 18.9, 17.9, 11.9, 22.8, 27.7, 30.8, 4.7, 43.6, 30.8), 
+  y = c("LinkedIn", "Yelp", "Facebook", "Flickr", "Pinterest", "Blogger", "WordPress.com", "Goodreads", "Slashdot", "Last.fm", "StumbleUpon", "Quora", "Twitter", "Stack Overflow", "MySpace", "LiveJournal", "Tagged", "Hi5", "Tumblr", "Reddit", "Github", "Orkut", "Hacker News", "deviantART"), 
+  marker = list(color = "rgb(41, 128, 171)"), 
+  name = "18-24", 
+  orientation = "h", 
+  type = "bar", 
+  uid = "d2ea67", 
+  xsrc = "Dreamshot:4231:9a1926", 
+  ysrc = "Dreamshot:4231:b4bc0c"
+)
+trace3 <- list(
+  x = c(16.2, 20, 18.9, 22, 27.2, 28, 24, 23.2, 23.3, 19.9, 22.2, 23.9, 23.2, 27.1, 20.9, 24.9, 26, 46.8, 23.2, 27, 26.8, 76, 25.3, 16.3), 
+  y = c("LinkedIn", "Yelp", "Facebook", "Flickr", "Pinterest", "Blogger", "WordPress.com", "Goodreads", "Slashdot", "Last.fm", "StumbleUpon", "Quora", "Twitter", "Stack Overflow", "MySpace", "LiveJournal", "Tagged", "Hi5", "Tumblr", "Reddit", "Github", "Orkut", "Hacker News", "deviantART"), 
+  marker = list(color = "rgb(104, 157, 46)"), 
+  name = "25-34", 
+  orientation = "h", 
+  type = "bar", 
+  uid = "5e63a2", 
+  xsrc = "Dreamshot:4231:2ec534", 
+  ysrc = "Dreamshot:4231:b4bc0c"
+)
+trace4 <- list(
+  x = c(31.6, 31.1, 20.1, 27.8, 26.8, 27.9, 26, 29.8, 36.6, 25.3, 24.9, 34.8, 22.8, 35.9, 22, 24.9, 15.9, 14.7, 20.6, 22, 27.1, 4.9, 22.4, 14.6), 
+  y = c("LinkedIn", "Yelp", "Facebook", "Flickr", "Pinterest", "Blogger", "WordPress.com", "Goodreads", "Slashdot", "Last.fm", "StumbleUpon", "Quora", "Twitter", "Stack Overflow", "MySpace", "LiveJournal", "Tagged", "Hi5", "Tumblr", "Reddit", "Github", "Orkut", "Hacker News", "deviantART"), 
+  marker = list(color = "rgb(36, 118, 23)"), 
+  name = "35-44", 
+  orientation = "h", 
+  type = "bar", 
+  uid = "24f079", 
+  xsrc = "Dreamshot:4231:c7663a", 
+  ysrc = "Dreamshot:4231:b4bc0c"
+)
+trace5 <- list(
+  x = c(30.2, 27, 33, 22, 25.1, 19, 22.1, 21.3, 11.9, 23.8, 20.9, 15, 23, 13.9, 22.8, 16.7, 27, 17.3, 18.1, 14, 10, 10.1, 8.7, 12), 
+  y = c("LinkedIn", "Yelp", "Facebook", "Flickr", "Pinterest", "Blogger", "WordPress.com", "Goodreads", "Slashdot", "Last.fm", "StumbleUpon", "Quora", "Twitter", "Stack Overflow", "MySpace", "LiveJournal", "Tagged", "Hi5", "Tumblr", "Reddit", "Github", "Orkut", "Hacker News", "deviantART"), 
+  marker = list(color = "rgb(169, 140, 31)"), 
+  name = "45-54", 
+  orientation = "h", 
+  type = "bar", 
+  uid = "ae6448", 
+  xsrc = "Dreamshot:4231:8f7c41", 
+  ysrc = "Dreamshot:4231:b4bc0c"
+)
+trace6 <- list(
+  x = c(12.7, 9.7, 8.9, 9.9, 7.9, 9.9, 8.9, 8.7, 9.3, 7, 8, 6.2, 5.9, 3.9, 6.2, 6.4, 3, 3.1, 5.1, 4.1, 3.4, 2.4, 0, 3.1), 
+  y = c("LinkedIn", "Yelp", "Facebook", "Flickr", "Pinterest", "Blogger", "WordPress.com", "Goodreads", "Slashdot", "Last.fm", "StumbleUpon", "Quora", "Twitter", "Stack Overflow", "MySpace", "LiveJournal", "Tagged", "Hi5", "Tumblr", "Reddit", "Github", "Orkut", "Hacker News", "deviantART"), 
+  marker = list(color = "rgb(178, 81, 28)"), 
+  name = "55-64", 
+  orientation = "h", 
+  type = "bar", 
+  uid = "173fcb", 
+  xsrc = "Dreamshot:4231:a324f1", 
+  ysrc = "Dreamshot:4231:b4bc0c"
+)
+trace7 <- list(
+  x = c(4.6, 4.6, 3.4, 4.6, 3.5, 3.5, 4.4, 3.5, 2.4, 3.5, 3.5, 2.4, 3.5, 1.5, 2.4, 2.4, 2.4, 2.3, 2.4, 2.3, 0, 0, 0, 1.5), 
+  y = c("LinkedIn", "Yelp", "Facebook", "Flickr", "Pinterest", "Blogger", "WordPress.com", "Goodreads", "Slashdot", "Last.fm", "StumbleUpon", "Quora", "Twitter", "Stack Overflow", "MySpace", "LiveJournal", "Tagged", "Hi5", "Tumblr", "Reddit", "Github", "Orkut", "Hacker News", "deviantART"), 
+  marker = list(color = "rgb(165, 28, 18)"), 
+  name = "65+", 
+  orientation = "h", 
+  type = "bar", 
+  uid = "991dba", 
+  xsrc = "Dreamshot:4231:898797", 
+  ysrc = "Dreamshot:4231:b4bc0c"
+)
+
+# set the data
+data <- list(trace1, trace2, trace3, trace4, trace5, trace6, trace7)
+
+# set the layout
+layout <- list(
+# changed autosize to TRUE here
+  autosize = TRUE, 
+  bargap = 0.05, 
+  bargroupgap = 0.15, 
+  barmode = "stack", 
+  boxgap = 0.3, 
+  boxgroupgap = 0.3, 
+  boxmode = "overlay", 
+  dragmode = "zoom", 
+  font = list(
+    color = "rgb(255, 255, 255)", 
+    family = "'Open sans', verdana, arial, sans-serif", 
+    size = 12
+  ), 
+  height = 700, 
+  hidesources = FALSE, 
+  hovermode = "x", 
+  legend = list(
+    x = 1.11153846154, 
+    y = 1.01538461538, 
+    bgcolor = "rgba(255, 255, 255, 0)", 
+    bordercolor = "rgba(0, 0, 0, 0)", 
+    borderwidth = 1, 
+    font = list(
+      color = "", 
+      family = "", 
+      size = 0
+    ), 
+    traceorder = "normal", 
+    xanchor = "auto", 
+    yanchor = "auto"
+  ), 
+  margin = list(
+    r = 80, 
+    t = 100, 
+    autoexpand = TRUE, 
+    b = 80, 
+    l = 100, 
+    pad = 0
+  ), 
+  paper_bgcolor = "rgb(67, 67, 67)", 
+  plot_bgcolor = "rgb(67, 67, 67)", 
+  separators = ".,", 
+  showlegend = TRUE, 
+  smith = FALSE, 
+  title = "<br> Age Distribution on Social Networks and Online Communities", 
+  titlefont = list(
+    color = "rgb(255, 255, 255)", 
+    family = "", 
+    size = 0
+  ), 
+  width = 700, 
+  xaxis = list(
+    anchor = "y", 
+    autorange = TRUE, 
+    autotick = TRUE, 
+    domain = c(0, 1), 
+    dtick = 20, 
+    exponentformat = "e", 
+    gridcolor = "#ddd", 
+    gridwidth = 1, 
+    linecolor = "#000", 
+    linewidth = 1, 
+    mirror = FALSE, 
+    nticks = 0, 
+    overlaying = FALSE, 
+    position = 0, 
+    range = c(0, 105.368421053), 
+    rangemode = "normal", 
+    showexponent = "all", 
+    showgrid = FALSE, 
+    showline = FALSE, 
+    showticklabels = TRUE, 
+    tick0 = 0, 
+    tickangle = "auto", 
+    tickcolor = "#000", 
+    tickfont = list(
+      color = "", 
+      family = "", 
+      size = 0
+    ), 
+    ticklen = 5, 
+    ticks = "", 
+    tickwidth = 1, 
+    title = "Sorted by average age, lowest at the top. <br><i>Source: Google U.S. Demographics, June 2012</i>", 
+    titlefont = list(
+      color = "", 
+      family = "", 
+      size = 0
+    ), 
+    type = "linear", 
+    zeroline = FALSE, 
+    zerolinecolor = "#000", 
+    zerolinewidth = 1
+  ), 
+  yaxis = list(
+    anchor = "x", 
+    autorange = TRUE, 
+    autotick = TRUE, 
+# added this so that the order of the social networks is preserved on the output
+    categoryorder = "trace",
+    domain = c(0, 1), 
+    dtick = 1, 
+    exponentformat = "e", 
+    gridcolor = "#ddd", 
+    gridwidth = 1, 
+    linecolor = "#000", 
+    linewidth = 1, 
+    mirror = FALSE, 
+    nticks = 0, 
+    overlaying = FALSE, 
+    position = 0, 
+    range = c(-0.5, 23.5), 
+    rangemode = "normal", 
+    showexponent = "all", 
+    showgrid = FALSE, 
+    showline = FALSE, 
+    showticklabels = TRUE, 
+    tick0 = 0, 
+    tickangle = "auto", 
+    tickcolor = "#000", 
+    tickfont = list(
+      color = "", 
+      family = "", 
+      size = 0
+    ), 
+    ticklen = 5, 
+    ticks = "", 
+    tickwidth = 1, 
+    title = "", 
+    titlefont = list(
+      color = "", 
+      family = "", 
+      size = 0
+    ), 
+    type = "category", 
+    zeroline = FALSE, 
+    zerolinecolor = "#000", 
+    zerolinewidth = 1
+  )
+)
+
+# build the plot
+p <- plot_ly(width=layout$width,height=layout$height)
+p <- add_trace(p, x=trace1$x, y=trace1$y, marker=trace1$marker, name=trace1$name, orientation=trace1$orientation, type=trace1$type, uid=trace1$uid, xsrc=trace1$xsrc, ysrc=trace1$ysrc)
+p <- add_trace(p, x=trace2$x, y=trace2$y, marker=trace2$marker, name=trace2$name, orientation=trace2$orientation, type=trace2$type, uid=trace2$uid, xsrc=trace2$xsrc, ysrc=trace2$ysrc)
+p <- add_trace(p, x=trace3$x, y=trace3$y, marker=trace3$marker, name=trace3$name, orientation=trace3$orientation, type=trace3$type, uid=trace3$uid, xsrc=trace3$xsrc, ysrc=trace3$ysrc)
+p <- add_trace(p, x=trace4$x, y=trace4$y, marker=trace4$marker, name=trace4$name, orientation=trace4$orientation, type=trace4$type, uid=trace4$uid, xsrc=trace4$xsrc, ysrc=trace4$ysrc)
+p <- add_trace(p, x=trace5$x, y=trace5$y, marker=trace5$marker, name=trace5$name, orientation=trace5$orientation, type=trace5$type, uid=trace5$uid, xsrc=trace5$xsrc, ysrc=trace5$ysrc)
+p <- add_trace(p, x=trace6$x, y=trace6$y, marker=trace6$marker, name=trace6$name, orientation=trace6$orientation, type=trace6$type, uid=trace6$uid, xsrc=trace6$xsrc, ysrc=trace6$ysrc)
+p <- add_trace(p, x=trace7$x, y=trace7$y, marker=trace7$marker, name=trace7$name, orientation=trace7$orientation, type=trace7$type, uid=trace7$uid, xsrc=trace7$xsrc, ysrc=trace7$ysrc)
+# removed 'bargroupgap', 'boxgap', 'boxgroupgap', 'boxmode' (deprecated?)
+p <- layout(p, autosize=layout$autosize, bargap=layout$bargap, barmode=layout$barmode, dragmode=layout$dragmode, font=layout$font, hidesources=layout$hidesources, hovermode=layout$hovermode, legend=layout$legend, margin=layout$margin, paper_bgcolor=layout$paper_bgcolor, plot_bgcolor=layout$plot_bgcolor, separators=layout$separators, showlegend=layout$showlegend, smith=layout$smith, title=layout$title, titlefont=layout$titlefont, xaxis=layout$xaxis, yaxis=layout$yaxis)
+
+# and plot it
+p
+
+
+```
+
