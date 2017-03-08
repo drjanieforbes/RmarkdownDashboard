@@ -109,8 +109,8 @@ my.base.map <- ggmap(Baltimore)
 # ########################################################################
 
 # "BaltimoreVacBldgsClean2016-10" is a "cleaned" version of the file
-# downloaded from NEED SITE HERE.  The "clean" version includes individual 
-# lat/lon fields that were separated using an external R file.  Additional
+# downloaded from https://data.baltimorecity.gov/.  The "clean" version includes 
+# individual lat/lon fields that were separated using an external R file.  Additional
 # cleaning is performed below before maps are output.
 
 # import the VACANT BUILDINGS point shapefiles
